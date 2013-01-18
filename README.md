@@ -20,6 +20,8 @@ This is the implementation of the JSON RPC interface into an Object.  The Progra
 
 This library depends on Jayrock.Json.  (http://jayrock.berlios.de/)
 
+Example code can be viewed in Program.cs
+
 ## OPEN ISSUES ##
 
 Please read the open issues to understand what is not functional about this library.  Changes will probably be made around Exceptions (see branch exceptions for code that is being worked on.
