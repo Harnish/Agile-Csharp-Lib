@@ -165,6 +165,13 @@ namespace AgileAPI
 
         public virtual object stat(string path)
         {
+            JsonObject statreturn = (JsonObject) Invoke("stat", token, path);
+            Console.WriteLine(Url);
+            if (Convert.ToInt32(statreturn["code"]) == -1)
+            {
+            //    ApiException("-1", "Object Not Found");
+            }
+            Console.WriteLine(ContentTypeMappings[".fif"]);
             return Invoke("stat", token, path);
         }
 
