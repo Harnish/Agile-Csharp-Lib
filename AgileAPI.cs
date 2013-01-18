@@ -19,6 +19,9 @@ namespace AgileAPI
     {
         private int _id;
         private string token;
+        private string Ousername;
+        private string Opassword;
+        public int maxAuthRetries;
         public Dictionary<string, string> ContentTypeMappings;
 
         public AgileAPIClient()
@@ -94,6 +97,7 @@ namespace AgileAPI
                 {".wmx", "video/x-ms-wmx"},
                 {".wvx", "video/x-ms-wvx"}
             };
+            maxAuthRetries = 10;
         }
 
         public virtual object Invoke(string method, params object[] args)
@@ -127,19 +131,62 @@ namespace AgileAPI
             }
         }
 
+        protected virtual object AuthCatch(string method, params object[] args)
+        {
+            for(int i = 0; i < maxAuthRetries; i++){
+                try {
+                    object jsonresponse = Invoke(method, token, args);
+                    return jsonresponse;
+                }
+                catch (ApiException e)
+                {
+                    if (e.code.Equals("2"))
+                    {
+                        Authenticate(Ousername, Opassword);
+                    }
+                    else
+                    {
+                        throw new ApiException("1", "Authentication failed.");
+                    }
+                }
+            }
+            throw new ApiException("3", "Unable to Update Reauth.");
+        }
+
         protected virtual void OnError(object errorObject) 
         {
             JsonObject error = errorObject as JsonObject;
-                        
+
             if (error != null)
+            {
+                Console.WriteLine("AAAAAA");
+                Console.WriteLine("AA" + error["message"] + "AA");
+                if (error["message"].Equals("Server Exception :: Authentication required"))
+                {
+                    Console.WriteLine("I am finally here");
+                    throw new ApiException("2", "Authentication required");
+                }
                 throw new Exception(error["message"] as string);
-                        
+            }
+            if (((string)errorObject).Equals("Server Exception :: Authentication required"))
+            {
+                throw new ApiException("2", "Authentication required");
+            }
+            Console.WriteLine("BBBBBBB");
+            Console.WriteLine(errorObject);
             throw new Exception(errorObject as string);
         }
 
         public virtual void Authenticate(string username, string password)
         {
+            this.Opassword = password;
+            this.Ousername = username;
             JsonArray foo = (JsonArray) Invoke("login", username, password, "TRUE");
+            Console.WriteLine("authe: " + foo);
+            if (foo[0] == null)
+            {
+                throw new ApiException("1", "Authentication Failed");
+            }
             token = (string)foo[0];
         }
 
@@ -155,24 +202,47 @@ namespace AgileAPI
 
         public virtual object listDir(string path)
         {
-            return Invoke("listDir", token, path);
+            JsonObject listDir = (JsonObject)Invoke("listDir", token, path);
+            if (Convert.ToInt32(listDir["code"]) == -1)
+            {
+                throw new ApiException("-1", "Path Not Found");
+            }
+            return listDir;
         }
 
         public virtual object listFile(string path)
         {
-            return Invoke("listFile", token, path);
+            try
+            {
+
+                JsonObject listFile = (JsonObject)Invoke("listFile", token, path);
+                if (Convert.ToInt32(listFile["code"]) == -1)
+                {
+                    throw new ApiException("-1", "Path Not Found");
+                }
+                return listFile;
+            }
+            catch (ApiException e)
+            {
+                if (e.code.Equals("2"))
+                {
+                    Authenticate(Ousername, Opassword);
+                    return listFile(path);
+                }
+                throw new ApiException("1", "Authentication failed.");
+            }
+
         }
 
-        public virtual object stat(string path)
+        public virtual object stat(string path, bool raiseOnNotFound = false)
         {
-            JsonObject statreturn = (JsonObject) Invoke("stat", token, path);
-            Console.WriteLine(Url);
-            if (Convert.ToInt32(statreturn["code"]) == -1)
-            {
-            //    ApiException("-1", "Object Not Found");
-            }
-            Console.WriteLine(ContentTypeMappings[".fif"]);
-            return Invoke("stat", token, path);
+                JsonObject statreturn = (JsonObject)AuthCatch("stat", path);
+                
+                if ((Convert.ToInt32(statreturn["code"]) == -1) && (raiseOnNotFound))
+                {
+                    throw new ApiException("-1", "Object Not Found");
+                }
+                return statreturn;   
         }
 
         public virtual object makeDir(string path)
@@ -209,6 +279,7 @@ namespace AgileAPI
         {
             return Invoke("setMTime", token, path, mtime);
         }
+
         public virtual byte[] upload(string myfile, string mydirectory)
         {
             string uploadurl = Url + "/post/file";  
@@ -247,7 +318,16 @@ namespace AgileAPI
                 //Need to set properly for extension types.
                 var extension = Path.GetExtension(myfile);
                 Console.WriteLine(extension);
-                buffer = Encoding.ASCII.GetBytes(string.Format("Content-Type: {0}{1}{1}", ContentTypeMappings[extension], Environment.NewLine));
+                string MyContentType = "octet/stream";
+                try
+                {
+                    MyContentType = ContentTypeMappings[extension];
+                }
+                catch
+                {
+                    MyContentType = "octet/stream";
+                }
+                buffer = Encoding.ASCII.GetBytes(string.Format("Content-Type: {0}{1}{1}", MyContentType, Environment.NewLine));
                 requestStream.Write(buffer, 0, buffer.Length);
                 using (FileStream myStream = File.OpenRead(myfile))
                 {
@@ -276,10 +356,10 @@ namespace AgileAPI
     [Serializable]
     public class ApiException : System.Exception
     {
-        private string code;
-        private string message;
+        public string code;
+        public string message;
 
-        public ApiException(string code, string messaage)
+        public ApiException(string code, string message)
         {
             this.code = code;
             this.message = message;
